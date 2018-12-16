@@ -129,21 +129,22 @@ service poemMgt on httpListener {
     resource function updatePoem(http:Caller caller, http:Request req, string poemId) {
         var updatedPoem = req.getJsonPayload();
         http:Response response = new;
+        json payload;
         if (updatedPoem is json) {
-            // Find the poem that needs to be updated and retrieve it in JSON format.
-            json existingPoem = poemsMap[poemId];
-
-            // Updating existing poem with the attributes of the updated poem.
-            if (existingPoem != null) {
-                existingPoem.Poem.Name = updatedPoem.Poem.Name;
-                existingPoem.Poem.Description = updatedPoem.Poem.Description;
-                poemsMap[poemId] = existingPoem;
+            var ret = testDB->update("UPDATE poem SET content = (?) WHERE id = CAST((?) AS uuid)", updatedPoem.content.toString(), poemId);
+            if (ret is int) {
+                if (ret > 0) {
+                    payload = { "Status": "Poem Updated Successfully" };
+                    log:printInfo("Poem updated successfully");
+                } else {
+                    payload = { "Status": "Poem Not Updated" };
+                    log:printError("Error occurred during update operation");
+                }
             } else {
-                existingPoem = "Poem : " + poemId + " cannot be found.";
+                payload = { "Status": "Poem Not Updated",  "Error": "Error occurred during update operation" };
+                log:printError("Error occurred during update operation", err = ret);
             }
-            // Set the JSON payload to the outgoing response message to the client.
-            response.setJsonPayload(untaint existingPoem);
-            // Send response to the client.
+            response.setJsonPayload(untaint payload);
             var result = caller->respond(response);
             if (result is error) {
                 log:printError("Error sending response", err = result);
@@ -166,10 +167,16 @@ service poemMgt on httpListener {
     }
     resource function deletePoem(http:Caller caller, http:Request req, string poemId) {
         http:Response response = new;
-        // Remove the requested poem from the map.
-        _ = poemsMap.remove(poemId);
+        json payload = "";
+        var ret = testDB->update("DELETE FROM poem WHERE id = CAST((?) AS uuid)", poemId);
+        if (ret is int) {
+            payload = { "Status": "Poem : " + poemId + " removed." };
+            log:printInfo("Poem : " + poemId + " removed.");
+        } else {
+            payload = { "Status": "Poem : " + poemId + " Not Deleted",  "Error": "Error occurred during delete operation" };
+            log:printError("Error occurred during delete operation", err = ret);
+        }
 
-        json payload = "Poem : " + poemId + " removed.";
         // Set a generated payload with poem status.
         response.setJsonPayload(untaint payload);
 
