@@ -1,5 +1,6 @@
 *.balx
 *.class
+*.conf
 *.log
 *.lck
 .ballerina
