@@ -1,6 +1,7 @@
 *.balx
 *.class
 *.log
+*.lck
 .ballerina
 .classpath
 target/
