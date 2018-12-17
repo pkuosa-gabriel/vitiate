@@ -13,7 +13,7 @@ import ballerinax/jdbc;
 @docker:CopyFiles {
     files: [
         {
-            source:"/Library/Ballerina/ballerina-0.990.0/bre/lib/postgresql-42.2.5.jar", 
+            source:"./lib/postgresql-42.2.5.jar", 
             target:"/ballerina/runtime/bre/lib"
         }
     ]
@@ -33,7 +33,7 @@ type Poem record {
 
 jdbc:Client testDB = new({
     url: config:getAsString("DATABASE_URL", default = "jdbc:postgresql://localhost:5432/vitiate_dev"),
-    username: config:getAsString("DATABASE_USERNAME", default = "gabriel"),
+    username: config:getAsString("DATABASE_USERNAME", default = "postgres"),
     password: config:getAsString("DATABASE_PASSWORD", default = ""),
     poolOptions: { maximumPoolSize: 5 },
     dbOptions: { useSSL: false }
@@ -198,10 +198,11 @@ service poemMgt on httpListener {
 
 // Main function
 public function main() {
-    var returned = testDB->update("CREATE TABLE poem(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), title VARCHAR(255), author VARCHAR(255), content TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+    // Create Table poem if it does not exist
+    var returned = testDB->update("CREATE TABLE IF NOT EXISTS poem(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), title VARCHAR(255), author VARCHAR(255), content TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
     if (returned is int) {
-        log:printInfo("Poems table create status in DB: " + returned);
+        log:printInfo("Table poem in DB: " + returned);
     } else if (returned is error) {
-        log:printError("Poems table create failed: " + <string>returned.detail().message);
+        log:printError("Table poem creation failed: " + <string>returned.detail().message);
     }
 }
