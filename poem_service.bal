@@ -43,13 +43,43 @@ jdbc:Client testDB = new({
     dbOptions: { useSSL: false }
 });
 
-// Poem management is done using an in-memory map.
-// Add some sample poems to 'poemsMap' at startup.
-map<json> poemsMap = {};
-
 // RESTful service.
 @http:ServiceConfig { basePath: "/api" }
-service poemMgt on httpListener {
+service poem on httpListener {
+    @http:ResourceConfig {
+        methods: ["GET"],
+        path: "/poems"
+    }
+    resource function getPoems(http:Caller caller, http:Request req) {
+        json? payload = null;
+        http:Response response = new;
+        var poemReq = req.getQueryParams();
+        int|error reqPage = int.convert(poemReq["page"]?: "");
+        int page = 0;
+        if (reqPage is int) {page = reqPage;}
+        page = page * 10;
+        var selectRet = testDB->select("SELECT * FROM poem ORDER BY updated_at DESC LIMIT 10 OFFSET (?)", Poem, loadToMemory = true, page);
+        if (selectRet is table<Poem>) {
+            var jsonConvertRet = json.convert(selectRet);
+            if (jsonConvertRet is json) {
+                payload = jsonConvertRet;
+            } else {
+                payload = { "Status": "No poems", "Error": "Error occurred in data conversion" };
+                log:printError("Error occurred in data conversion", err = jsonConvertRet);
+            }
+        } else if (selectRet is error) {
+            io:println("Select data from Table poem failed: " + <string>selectRet.detail().message);
+        }
+
+        // Set the JSON payload in the outgoing response message.
+        response.setJsonPayload(untaint payload);
+
+        // Send response to the client.
+        var result = caller->respond(response);
+        if (result is error) {
+            log:printError("Error sending response", err = result);
+        }
+    }
 
     // Resource that handles the HTTP GET requests that are directed to a specific
     // poem using path '/poem/<poemId>'.
