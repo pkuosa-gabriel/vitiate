@@ -35,7 +35,7 @@ type Poem record {
     string updated_at;
 };
 
-jdbc:Client testDB = new({
+jdbc:Client mainDB = new({
     url: config:getAsString("DATABASE_URL", default = "jdbc:postgresql://localhost:5432/vitiate_dev"),
     username: config:getAsString("DATABASE_USERNAME", default = "postgres"),
     password: config:getAsString("DATABASE_PASSWORD", default = ""),
@@ -53,22 +53,29 @@ service poem on httpListener {
     resource function getPoems(http:Caller caller, http:Request req) {
         json? payload = null;
         http:Response response = new;
-        var poemReq = req.getQueryParams();
-        int|error reqPage = int.convert(poemReq["page"]?: "");
-        int page = 0;
-        if (reqPage is int) {page = reqPage;}
+
+        // Read pagination param from request
+        var queryParams = req.getQueryParams();
+        int|error queryPage = int.convert(queryParams["page"]?: "");
+        int page;
+        if (queryPage is int) {
+            page = queryPage;
+        } else {
+            page = 0;
+        }
         page = page * 10;
-        var selectRet = testDB->select("SELECT * FROM poem ORDER BY updated_at DESC LIMIT 10 OFFSET (?)", Poem, loadToMemory = true, page);
-        if (selectRet is table<Poem>) {
-            var jsonConvertRet = json.convert(selectRet);
-            if (jsonConvertRet is json) {
-                payload = jsonConvertRet;
+
+        var poems = mainDB->select("SELECT * FROM poem ORDER BY updated_at DESC LIMIT 10 OFFSET (?)", Poem, loadToMemory = true, page);
+        if (poems is table<Poem>) {
+            var poemsJson = json.convert(poems);
+            if (poemsJson is json) {
+                payload = poemsJson;
             } else {
                 payload = { "Status": "No poems", "Error": "Error occurred in data conversion" };
-                log:printError("Error occurred in data conversion", err = jsonConvertRet);
+                log:printError("Error occurred in data conversion", err = poemsJson);
             }
-        } else if (selectRet is error) {
-            io:println("Select data from Table poem failed: " + <string>selectRet.detail().message);
+        } else if (poems is error) {
+            io:println("Select data from Table poem failed: " + <string>poems.detail().message);
         }
 
         // Set the JSON payload in the outgoing response message.
@@ -92,17 +99,17 @@ service poem on httpListener {
         json? payload = null;
         http:Response response = new;
 
-        var selectRet = testDB->select("SELECT * FROM poem WHERE id = CAST((?) AS uuid)", Poem, loadToMemory = true, poemId);
-        if (selectRet is table<Poem>) {
-            var jsonConvertRet = json.convert(selectRet);
-            if (jsonConvertRet is json) {
-                payload = jsonConvertRet;
+        var poems = mainDB->select("SELECT * FROM poem WHERE id = CAST((?) AS uuid)", Poem, loadToMemory = true, poemId);
+        if (poems is table<Poem>) {
+            var poemsJson = json.convert(poems);
+            if (poemsJson is json) {
+                payload = poemsJson;
             } else {
                 payload = { "Status": "Poem Not Found", "Error": "Error occurred in data conversion" };
-                log:printError("Error occurred in data conversion", err = jsonConvertRet);
+                log:printError("Error occurred in data conversion", err = poemsJson);
             }
-        } else if (selectRet is error) {
-            io:println("Select data from poem table failed: " + <string>selectRet.detail().message);
+        } else if (poems is error) {
+            io:println("Select data from poem table failed: " + <string>poems.detail().message);
         }
 
         // Set the JSON payload in the outgoing response message.
@@ -126,14 +133,14 @@ service poem on httpListener {
         var poemReq = req.getJsonPayload();
         string poemId = "";
         if (poemReq is json) {
-            var returned = testDB->updateWithGeneratedKeys("INSERT INTO poem(title, author, content) values (?, ?, ?)", (), poemReq.Poem.title.toString(), poemReq.Poem.author.toString(), poemReq.Poem.content.toString());
-            if (returned is (int, string[])) {
-                var (count, ids) = returned;
+            var dbRet = mainDB->updateWithGeneratedKeys("INSERT INTO poem(title, author, content) values (?, ?, ?)", (), poemReq.Poem.title.toString(), poemReq.Poem.author.toString(), poemReq.Poem.content.toString());
+            if (dbRet is (int, string[])) {
+                var (count, ids) = dbRet;
                 poemId = ids[0];
                 log:printInfo("Inserted row count to Poems table: " + count);
                 log:printInfo("Generated key: " + poemId);
-            } else if (returned is error) {
-                log:printError("Insert to Poems table failed: " + <string>returned.detail().message);
+            } else if (dbRet is error) {
+                log:printError("Insert to Poems table failed: " + <string>dbRet.detail().message);
             }
 
             // Create response message.
@@ -173,9 +180,9 @@ service poem on httpListener {
         http:Response response = new;
         json payload;
         if (updatedPoem is json) {
-            var ret = testDB->update("UPDATE poem SET content = (?) WHERE id = CAST((?) AS uuid)", updatedPoem.content.toString(), poemId);
-            if (ret is int) {
-                if (ret > 0) {
+            var dbRet = mainDB->update("UPDATE poem SET content = (?) WHERE id = CAST((?) AS uuid)", updatedPoem.content.toString(), poemId);
+            if (dbRet is int) {
+                if (dbRet > 0) {
                     payload = { "Status": "Poem Updated Successfully" };
                     log:printInfo("Poem updated successfully");
                 } else {
@@ -184,7 +191,7 @@ service poem on httpListener {
                 }
             } else {
                 payload = { "Status": "Poem Not Updated",  "Error": "Error occurred during update operation" };
-                log:printError("Error occurred during update operation", err = ret);
+                log:printError("Error occurred during update operation", err = dbRet);
             }
             response.setJsonPayload(untaint payload);
             var result = caller->respond(response);
@@ -210,13 +217,13 @@ service poem on httpListener {
     resource function deletePoem(http:Caller caller, http:Request req, string poemId) {
         http:Response response = new;
         json payload = "";
-        var ret = testDB->update("DELETE FROM poem WHERE id = CAST((?) AS uuid)", poemId);
-        if (ret is int) {
+        var dbRet = mainDB->update("DELETE FROM poem WHERE id = CAST((?) AS uuid)", poemId);
+        if (dbRet is int) {
             payload = { "Status": "Poem : " + poemId + " removed." };
             log:printInfo("Poem : " + poemId + " removed.");
         } else {
             payload = { "Status": "Poem : " + poemId + " Not Deleted",  "Error": "Error occurred during delete operation" };
-            log:printError("Error occurred during delete operation", err = ret);
+            log:printError("Error occurred during delete operation", err = dbRet);
         }
 
         // Set a generated payload with poem status.
@@ -233,10 +240,10 @@ service poem on httpListener {
 // Main function
 public function main() {
     // Create Table poem if it does not exist
-    var returned = testDB->update("CREATE TABLE IF NOT EXISTS poem(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), title VARCHAR(255), author VARCHAR(255), content TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
-    if (returned is int) {
-        log:printInfo("Table poem in DB: " + returned);
-    } else if (returned is error) {
-        log:printError("Table poem creation failed: " + <string>returned.detail().message);
+    var dbRet = mainDB->update("CREATE TABLE IF NOT EXISTS poem(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), title VARCHAR(255), author VARCHAR(255), content TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+    if (dbRet is int) {
+        log:printInfo("Table poem in DB: " + dbRet);
+    } else if (dbRet is error) {
+        log:printError("Table poem creation failed: " + <string>dbRet.detail().message);
     }
 }
