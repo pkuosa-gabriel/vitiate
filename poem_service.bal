@@ -10,6 +10,14 @@ import ballerinax/jdbc;
     name:"vitiate",
     tag:"v1.0"
 }
+@docker:CopyFiles {
+    files: [
+        {
+            source:"/Library/Ballerina/ballerina-0.990.0/bre/lib/postgresql-42.2.5.jar", 
+            target:"/ballerina/runtime/bre/lib"
+        }
+    ]
+}
 @docker:Expose{}
 
 listener http:Listener httpListener = new(9090);
