@@ -15,6 +15,10 @@ import ballerinax/jdbc;
         {
             source:"./lib/postgresql-42.2.5.jar", 
             target:"/ballerina/runtime/bre/lib"
+        },
+        {
+            source:"./ballerina.conf",
+            target:"/home/ballerina"      
         }
     ]
 }
